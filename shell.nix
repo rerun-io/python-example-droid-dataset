@@ -10,6 +10,7 @@ in
     ];
     buildInputs = with pkgs; [
       libxkbcommon
+      glui
       libGL
       gcc-unwrapped.lib
       pkg-config

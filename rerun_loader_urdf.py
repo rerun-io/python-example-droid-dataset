@@ -117,7 +117,7 @@ class URDFLogger:
                     elif material.texture is not None:
                         texture_path = resolve_ros_path(material.texture.filename)
                         mesh.visual = trimesh.visual.texture.TextureVisuals(image=Image.open(texture_path))
-                log_trimesh(entity_path, mesh)
+                log_trimesh(entity_path+f"_{i}", mesh)
         else:
             mesh = mesh_or_scene
             if material is not None:
@@ -132,7 +132,6 @@ class URDFLogger:
 
 def log_trimesh(entity_path: str, mesh: trimesh.Trimesh) -> None:
     vertex_colors = albedo_texture = vertex_texcoords = None
-
     if isinstance(mesh.visual, trimesh.visual.color.ColorVisuals):
         vertex_colors = mesh.visual.vertex_colors
     elif isinstance(mesh.visual, trimesh.visual.texture.TextureVisuals):
@@ -143,7 +142,10 @@ def log_trimesh(entity_path: str, mesh: trimesh.Trimesh) -> None:
         vertex_texcoords = mesh.visual.uv
         # Trimesh uses the OpenGL convention for UV coordinates, so we need to flip the V coordinate
         # since Rerun uses the Vulkan/Metal/DX12/WebGPU convention.
-        vertex_texcoords[:, 1] = 1.0 - vertex_texcoords[:, 1]
+        if vertex_texcoords is None:
+            pass
+        else:
+            vertex_texcoords[:, 1] = 1.0 - vertex_texcoords[:, 1]
     else:
         # Neither simple color nor texture, so we'll try to retrieve vertex colors via trimesh.
         try:
@@ -156,7 +158,7 @@ def log_trimesh(entity_path: str, mesh: trimesh.Trimesh) -> None:
                 vertex_colors = colors
         except Exception:
             pass
-
+    
     rr.log(
         entity_path,
         rr.Mesh3D(
@@ -169,7 +171,6 @@ def log_trimesh(entity_path: str, mesh: trimesh.Trimesh) -> None:
         ),
         timeless=True,
     )
-
 
 def resolve_ros_path(path: str) -> str:
     """Resolve a ROS path to an absolute path."""
