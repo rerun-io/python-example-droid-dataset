@@ -6,7 +6,7 @@ import rerun as rr
 import argparse
 import numpy as np
 import numpy.typing as npt
-import scipy as sp
+from scipy.spatial.transform import Rotation
 import os
 import sys
 from pathlib import Path
@@ -74,15 +74,28 @@ def h5_tree(val, pre=""):
 
 
 class SVOCamera:
-    def __init__(self, path: Path, translation: np.array, rot_mat: np.array):
-        self.translation = translation
-        self.rot_mat = rot_mat
+
+    left_images: list[np.array]
+    right_images: list[np.array]
+    depth_images: list[np.array]
+    width: float
+    height: float
+    left_dist_coeffs: np.array
+    left_intrinsic_mat: np.array
+
+    right_dist_coeffs: np.array
+    right_intrinsic_mat: np.array
+
+    def __init__(self, svo_path: Path):
         init_params = sl.InitParameters()
-        init_params.set_from_svo_file(str(SVO_PATH / "15102076.svo"))
-        init_params.svo_real_time_mode = False  # Don't convert in realtime
+        init_params.set_from_svo_file(svo_path)
+        init_params.depth_mode = sl.DEPTH_MODE.QUALITY
+        init_params.svo_real_time_mode = True
         init_params.coordinate_units = (
-            sl.UNIT.MILLIMETER
-        )  # Use milliliter units (for depth measurements)
+            sl.UNIT.METER
+        )
+        # init_params.depth_minimum_distance = 200
+        init_params.depth_minimum_distance = 0.2
 
         zed = sl.Camera()
         err = zed.open(init_params)
@@ -131,13 +144,13 @@ class SVOCamera:
             err = zed.grab(rt_param)
             if err == sl.ERROR_CODE.SUCCESS:
                 zed.retrieve_image(left_image, sl.VIEW.LEFT)
-                self.left_images.append(np.array(left_image))
+                self.left_images.append(np.array(left_image.numpy()))
 
                 zed.retrieve_image(right_image, sl.VIEW.RIGHT)
-                self.right_images.append(np.array(right_image))
+                self.right_images.append(np.array(right_image.numpy()))
 
-                zed.retrieve_image(depth_image, sl.VIEW.DEPTH)
-                self.depth_images.append(np.array(depth_image))
+                zed.retrieve_measure(depth_image, sl.MEASURE.DEPTH)
+                self.depth_images.append(np.array(depth_image.numpy()))
             else:
                 break
     
@@ -160,6 +173,12 @@ class SVOCamera:
         ))
 
 class DROIDScene:
+
+    dir_path: Path
+    trajectory_length: int
+    metadata: dict
+    cameras: dict[str, SVOCamera]
+    
     def __init__(self, dir_path: Path):
         self.dir_path = dir_path
 
@@ -173,58 +192,45 @@ class DROIDScene:
         self.trajectory = h5py.File(str(self.dir_path / "trajectory.h5"), "r")
         h5_tree(self.trajectory)
 
-        self.left_images = []
-        self.right_images = []
-
         self.trajectory_length = self.metadata["trajectory_length"]
 
-        self.load_camera("ext1")
-        # self.ext1_cam = SVOCamera(
-        #     str(
-        #         self.dir_path
-        #         / "recordings"
-        #         / "SVO"
-        #         / f"{self.metadata['ext1_cam_serial']}.svo"
-        #     )
-        # )
-        # self.ext2_cam = SVOCamera(
-        #     str(
-        #         self.dir_path
-        #         / "recordings"
-        #         / "SVO"
-        #         / f"{self.metadata['ext2_cam_serial']}.svo"
-        #     )
-        # )
-        # self.wrist_cam = SVOCamera(
-        #     str(
-        #         self.dir_path
-        #         / "recordings"
-        #         / "SVO"
-        #         / f"{self.metadata['wrist_cam_serial']}.svo"
-        #     )
-        # )
+        camera_names = ["ext1", "ext2"]
 
-    def load_camera(self, camera_name: str):
-        serial = self.metadata[f'{camera_name}_cam_serial']
-        extrinsics = self.metadata[f'{camera_name}_cam_extrinsics']
-        translation = extrinsics[:3]
-        rotation = sp.spatial.transform.Rotation.from_euler('xyz', extrinsics[3:])
-        camera = SVOCamera(
-            str(
-                self.dir_path
-                / "recordings"
-                / "SVO"
-                / f"{serial}.svo"
-            ),
-            translation,
-            rotation,
-        )
-        setattr(self, camera_name+"_cam", camera)
+        self.serial = {
+            camera_name: self.metadata[f'{camera_name}_cam_serial'] for camera_name in camera_names
+        }
 
+        self.cameras = {}
+        for camera_name in camera_names:
+            self.cameras[camera_name] = SVOCamera(
+                str(
+                    self.dir_path
+                    / "recordings"
+                    / "SVO"
+                    / f"{self.serial[camera_name]}.svo"
+                ),
+            )
 
-    def log_frame_n(self, entity_path: str, n: int):
-        pass
+    def log_frame_n(self, n: int):
+        for (camera_name, camera) in self.cameras.items():
+            if n < len(camera.left_images):
+                left_image = camera.left_images[n]
 
+                extrinsics = self.trajectory["observation"]["camera_extrinsics"][f"{self.serial[camera_name]}_left"][n]
+                rotation = Rotation.from_euler('xyz', np.array(extrinsics[3:])).as_matrix()
+                
+                rr.log(f"{camera_name}_camera/", rr.Pinhole(
+                    image_from_camera=camera.left_intrinsic_mat,
+                )),
+                rr.log(f"{camera_name}_camera/", rr.Transform3D(
+                    translation=np.array(extrinsics[:3]),
+                    mat3x3=rotation,
+                )),
+
+                rr.log(f"{camera_name}_camera/rgb", rr.Image(left_image))
+                depth = camera.depth_images[n]
+                depth[depth > 2.0] = 0.0
+                rr.log(f"{camera_name}_camera/depth", rr.DepthImage(depth))
 
 def main() -> None:
     rr.init("DROID-visualized")
@@ -243,8 +249,7 @@ def main() -> None:
     urdf_logger.log()
 
     for i in range(scene.trajectory_length):
-        
-        pass
+        scene.log_frame_n(i)
 
     return
 
