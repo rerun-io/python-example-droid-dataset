@@ -7,6 +7,8 @@ in
     packages = with pkgs; [
       python311
       nix-ld
+      google-cloud-sdk-gce
+      jq
     ];
     buildInputs = with pkgs; [
       libxkbcommon
