@@ -24,6 +24,16 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 import tensorflow as tf
 import tensorflow_datasets as tfds
 
+"""
+videos/5030472d/2023-07-18/Tue_Jul_18_14:04:48_2023/27904255.mp4
+ILIAD+5e938e3b+2023-07-18-14h-04m-48s
+
+2023-06-14/Wed_Jun_14_16:26:36_2023
+
+videos/5030472d/2023-06-11/Sun_Jun_11_15:52:37_2023/27904255.mp4
+ILIAD
+
+"""
 
 def path_to_link(link: int) -> str:
     return "/".join(f"panda_link{i}" for i in range(link + 1))
@@ -35,20 +45,20 @@ def log_angle_rot(urdf_logger: URDFLogger, link: int, angle_rad: int) -> None:
 
     link_to_rot_axis = np.array(
         [
-            [1, 0, 0],
+            [1, 0, 0], # unused
             [0, 0, 1],  # 1
-            [0, 1, 0],  # 2
-            [0, 1, 0],  # 3
-            [0, -1, 0],  # 4
-            [0, 1, 0],  # 5
-            [0, -1, 0],  # 6
-            [0, 1, 0],  # 7
+            [0, 0, 1],  # 2
+            [0, 0, 1],  # 3
+            [0, 0, 1],  # 4
+            [0, 0, 1],  # 5
+            [0, 0, 1],  # 6
+            [0, 0, 1],  # 7
             [0, 0, 1],  # 8
         ]
     )
     vec = np.array(link_to_rot_axis[link] * angle_rad)
     rot = st.Rotation.from_rotvec(vec).as_matrix()
-    rotation_mat = rot @ start_rotation_mat
+    rotation_mat = start_rotation_mat @ rot
     rr.log(
         entity_path, rr.Transform3D(translation=start_translation, mat3x3=rotation_mat)
     )
@@ -94,7 +104,6 @@ class SVOCamera:
         init_params.coordinate_units = (
             sl.UNIT.METER
         )
-        # init_params.depth_minimum_distance = 200
         init_params.depth_minimum_distance = 0.2
 
         zed = sl.Camera()
@@ -129,31 +138,29 @@ class SVOCamera:
 
         self.left_dist_coeffs = params.left_cam.disto
         self.right_dist_coeffs = params.right_cam.disto
+        
+        self.zed = zed
 
+    def get_next_frame(self) -> tuple[np.array, np.array, np.array] |  None:
         left_image = sl.Mat()
         right_image = sl.Mat()
         depth_image = sl.Mat()
 
         rt_param = sl.RuntimeParameters()
+        err = self.zed.grab(rt_param)
+        if err == sl.ERROR_CODE.SUCCESS:
+            self.zed.retrieve_image(left_image, sl.VIEW.LEFT)
+            left_image = np.array(left_image.numpy())
 
-        self.left_images = []
-        self.right_images = []
-        self.depth_images = []
+            self.zed.retrieve_image(right_image, sl.VIEW.RIGHT)
+            right_image = np.array(right_image.numpy())
 
-        while True:
-            err = zed.grab(rt_param)
-            if err == sl.ERROR_CODE.SUCCESS:
-                zed.retrieve_image(left_image, sl.VIEW.LEFT)
-                self.left_images.append(np.array(left_image.numpy()))
+            self.zed.retrieve_measure(depth_image, sl.MEASURE.DEPTH)
+            depth_image = np.array(depth_image.numpy())
+            return (left_image, right_image, depth_image)
+        else:
+            return None
 
-                zed.retrieve_image(right_image, sl.VIEW.RIGHT)
-                self.right_images.append(np.array(right_image.numpy()))
-
-                zed.retrieve_measure(depth_image, sl.MEASURE.DEPTH)
-                self.depth_images.append(np.array(depth_image.numpy()))
-            else:
-                break
-    
     def log_params(self, entity_path: str, n: int):
         rr.log(entity_path, rr.Transform3D(
                 translation = self.translation,
@@ -194,11 +201,14 @@ class DROIDScene:
 
         self.trajectory_length = self.metadata["trajectory_length"]
 
-        camera_names = ["ext1", "ext2"]
+        camera_names = ["ext1", "ext2", "wrist"]
 
         self.serial = {
             camera_name: self.metadata[f'{camera_name}_cam_serial'] for camera_name in camera_names
         }
+
+        self.joint_positions = self.trajectory["observation"]["robot_state"]["joint_positions"]
+        self.joint_velocities = self.trajectory["observation"]["robot_state"]["joint_velocities"]
 
         self.cameras = {}
         for camera_name in camera_names:
@@ -211,26 +221,66 @@ class DROIDScene:
                 ),
             )
 
-    def log_frame_n(self, n: int):
-        for (camera_name, camera) in self.cameras.items():
-            if n < len(camera.left_images):
-                left_image = camera.left_images[n]
+    def log_robot_states(self, urdf_logger: URDFLogger):
+        time_stamps_nanos = self.trajectory["observation"]["timestamp"]["robot_state"]["robot_timestamp_nanos"]
+        time_stamps_seconds = self.trajectory["observation"]["timestamp"]["robot_state"]["robot_timestamp_seconds"]
+        for i in range(self.trajectory_length):
+            time_stamp = time_stamps_seconds[i]*int(1e9) + time_stamps_nanos[i]
+            rr.set_time_nanos("real_time", time_stamp)
 
-                extrinsics = self.trajectory["observation"]["camera_extrinsics"][f"{self.serial[camera_name]}_left"][n]
-                rotation = Rotation.from_euler('xyz', np.array(extrinsics[3:])).as_matrix()
-                
-                rr.log(f"{camera_name}_camera/", rr.Pinhole(
+            if i == 0:
+                # We want to log the robot here so that it appears in the right timeline
+                urdf_logger.log()
+
+            for (joint_idx, angle) in enumerate(self.joint_positions[i]):
+                log_angle_rot(urdf_logger, joint_idx+1, angle)
+
+            for (camera_name, camera) in self.cameras.items():
+                time_stamp_camera = self.trajectory["observation"]["timestamp"]["cameras"][f"{self.serial[camera_name]}_estimated_capture"][i]
+                rr.set_time_nanos("real_time", time_stamp_camera*int(1e6))
+
+                extrinsics_left = self.trajectory["observation"]["camera_extrinsics"][f"{self.serial[camera_name]}_left"][i]
+                rotation = Rotation.from_euler('xyz', np.array(extrinsics_left[3:])).as_matrix()
+
+                rr.log(f"{camera_name}_camera/left", rr.Pinhole(
                     image_from_camera=camera.left_intrinsic_mat,
                 )),
-                rr.log(f"{camera_name}_camera/", rr.Transform3D(
-                    translation=np.array(extrinsics[:3]),
+                rr.log(f"{camera_name}_camera/left", rr.Transform3D(
+                    translation=np.array(extrinsics_left[:3]),
                     mat3x3=rotation,
                 )),
 
-                rr.log(f"{camera_name}_camera/rgb", rr.Image(left_image))
-                depth = camera.depth_images[n]
-                depth[depth > 2.0] = 0.0
-                rr.log(f"{camera_name}_camera/depth", rr.DepthImage(depth))
+                extrinsics_right = self.trajectory["observation"]["camera_extrinsics"][f"{self.serial[camera_name]}_right"][i]
+                rotation = Rotation.from_euler('xyz', np.array(extrinsics_right[3:])).as_matrix()
+
+                rr.log(f"{camera_name}_camera/right", rr.Pinhole(
+                    image_from_camera=camera.right_intrinsic_mat,
+                )),
+                rr.log(f"{camera_name}_camera/right", rr.Transform3D(
+                    translation=np.array(extrinsics_right[:3]),
+                    mat3x3=rotation,
+                )),
+
+                depth_translation = (extrinsics_left[:3]+extrinsics_right[:3])/2
+                rotation = Rotation.from_euler('xyz', np.array(extrinsics_right[3:])).as_matrix()
+
+                rr.log(f"{camera_name}_camera/depth", rr.Pinhole(
+                    image_from_camera=camera.left_intrinsic_mat,
+                )),
+                rr.log(f"{camera_name}_camera/depth", rr.Transform3D(
+                    translation=depth_translation,
+                    mat3x3=rotation,
+                )),
+
+                frames = camera.get_next_frame()
+                if frames:
+                    left_image, right_image, depth_image = frames
+                    depth_image[depth_image > 1.5] = 0
+
+                    rr.log(f"{camera_name}_camera/left", rr.Image(left_image))
+                    rr.log(f"{camera_name}_camera/right", rr.Image(right_image))
+                    rr.log(f"{camera_name}_camera/depth", rr.DepthImage(depth_image))
+
 
 def main() -> None:
     rr.init("DROID-visualized")
@@ -239,73 +289,18 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Visualizes the DROID dataset using Rerun."
     )
-    parser.add_argument("--data", type=Path)
-    parser.add_argument("--urdf", type=Path)
+    parser.add_argument("--data", required=True, type=Path)
+    parser.add_argument("--urdf", default="franka_description/panda.urdf", type=Path)
     args = parser.parse_args()
 
-    scene = DROIDScene(args.data)
-
+    scene = DROIDScene(args.data)    
+    
     urdf_logger = URDFLogger(args.urdf)
-    urdf_logger.log()
-
-    for i in range(scene.trajectory_length):
-        scene.log_frame_n(i)
+    
+    scene.log_robot_states(urdf_logger)
+    
 
     return
-
-    parser = argparse.ArgumentParser(
-        description="Visualizes the DROID dataset using Rerun."
-    )
-    parser.add_argument("--data-dir", type=Path, default=Path("droid_100") / "1.0.0")
-    parser.add_argument("--urdf-path", type=Path, default=Path("Panda") / "panda.urdf")
-    args = parser.parse_args()
-
-    urdf_logger = URDFLogger(args.urdf_path)
-    urdf_logger.log()
-
-    # ds = tfds.load("droid_raw", data_dir="gs://gresearch/robotics")
-    # print(ds)
-    # print(ds.info.features)
-
-
-#     builder = tfds.builder_from_directory(builder_dir=args.data_dir)
-#     print(builder.info.features)
-
-#     dataset = builder.as_dataset()["train"]
-
-#     for series in list(dataset)[:4]:
-#         for i, step in enumerate(series["steps"]):
-#             # rr.set_time_sequence("step", i+1)
-
-#             rr.log("observation/exterior_image_1_left", rr.Image(np.array(step['observation']['exterior_image_1_left'])))
-#             rr.log("observation/exterior_image_2_left", rr.Image(np.array(step['observation']['exterior_image_2_left'])))
-#             rr.log("observation/wrist_image_left", rr.Image(np.array(step['observation']['wrist_image_left'])))
-
-#             joint_positions = step["observation"]["joint_position"]
-#             for (joint_idx, angle) in enumerate(joint_positions):
-#                 log_angle_rot(urdf_logger, joint_idx+1, angle)
-
-#             rr.log("observation/gripper_position", rr.Scalar(step['observation']['gripper_position']))
-
-#             rr.log("discount", rr.Scalar(step['discount']))
-
-#             rr.log("language_instructions", rr.TextDocument(
-#                 f'''
-# **instruction 1**: {bytearray(step["language_instruction"].numpy()).decode()}\n
-# **instruction 2**: {bytearray(step["language_instruction_2"].numpy()).decode()}\n
-# **instruction 3**: {bytearray(step["language_instruction_3"].numpy()).decode()}\n
-#     ''', media_type="text/markdown"
-#             ))
-
-#             action_dict = step["action_dict"]
-#             rr.log("/action_dict/gripper_velocity", rr.Scalar(action_dict["gripper_velocity"]))
-#             rr.log("/action_dict/gripper_position", rr.Scalar(action_dict["gripper_position"]))
-#             for (i, vel) in enumerate(action_dict["joint_velocity"]):
-#                 rr.log(f'/action_dict/joint_velocity/{i}', rr.Scalar(vel))
-
-#             for (i, vel) in enumerate(action_dict["joint_velocity"]):
-#                 rr.log(f'/action_dict/joint_velocity/{i}', rr.Scalar(vel))
-
 
 if __name__ == "__main__":
     main()

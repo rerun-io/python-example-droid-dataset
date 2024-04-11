@@ -4,3 +4,4 @@ venv/
 __pycache__/
 data/
 /metadata.json
+aggregated-annotations-030724.json

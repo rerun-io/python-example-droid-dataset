@@ -20,6 +20,8 @@ docker run -it -d --rm --privileged \
   --gpus all \
   --volume="$HOME/.Xauthority:/root/.Xauthority:rw" \
   --volume="$PWD/src:/root/droid-example/src:rw" \
+  --volume="$PWD/robotiq_arg85_description:/root/droid-example/robotiq_arg85_description:rw" \
+  --volume="$PWD/franka_description:/root/droid-example/franka_description:rw" \
   --volume="$PWD/data:/root/droid-example/data:rw" \
   --volume="$PWD/franka_description:/root/droid-example/franka_description:rw" \
   -e DISPLAY="localhost:10.0" \

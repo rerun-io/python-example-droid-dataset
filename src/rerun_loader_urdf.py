@@ -19,10 +19,11 @@ from urdf_parser_py import urdf as urdf_parser
 class URDFLogger:
     """Class to log a URDF to Rerun."""
 
-    def __init__(self, filepath: str) -> None:
+    def __init__(self, filepath: str, root_path: str = "") -> None:
         self.urdf = urdf_parser.URDF.from_xml_file(filepath)
         self.mat_name_to_mat = {mat.name: mat for mat in self.urdf.materials}
         self.entity_to_transform = {}
+        self.root_path = root_path
 
     def link_entity_path(self, link: urdf_parser.Link) -> str:
         """Return the entity path for the URDF link."""
@@ -38,7 +39,7 @@ class URDFLogger:
 
     def log(self) -> None:
         """Log a URDF file to Rerun."""
-        rr.log("", rr.ViewCoordinates.RIGHT_HAND_Z_UP, timeless=True)  # default ROS convention
+        rr.log(self.root_path + "", rr.ViewCoordinates.RIGHT_HAND_Z_UP, timeless=True)  # default ROS convention
 
         for joint in self.urdf.joints:
             entity_path = self.joint_entity_path(joint)
@@ -62,8 +63,8 @@ class URDFLogger:
         if joint.origin is not None and joint.origin.rpy is not None:
             rotation = st.Rotation.from_euler("xyz", joint.origin.rpy).as_matrix()
 
-        self.entity_to_transform[entity_path] = (translation, rotation)
-        rr.log(entity_path, rr.Transform3D(translation=translation, mat3x3=rotation))
+        self.entity_to_transform[self.root_path + entity_path] = (translation, rotation)
+        rr.log(self.root_path + entity_path, rr.Transform3D(translation=translation, mat3x3=rotation))
 
     def log_visual(self, entity_path: str, visual: urdf_parser.Visual) -> None:
         material = None
@@ -98,7 +99,7 @@ class URDFLogger:
                 radius=visual.geometry.radius,
             )
         else:
-            rr.log(
+            rr.log(self.root_path + 
                 "",
                 rr.TextLog("Unsupported geometry type: " + str(type(visual.geometry))),
             )
@@ -117,7 +118,7 @@ class URDFLogger:
                     elif material.texture is not None:
                         texture_path = resolve_ros_path(material.texture.filename)
                         mesh.visual = trimesh.visual.texture.TextureVisuals(image=Image.open(texture_path))
-                log_trimesh(entity_path+f"_{i}", mesh)
+                log_trimesh(self.root_path + entity_path+f"/{i}", mesh)
         else:
             mesh = mesh_or_scene
             if material is not None:
@@ -127,7 +128,7 @@ class URDFLogger:
                 elif material.texture is not None:
                     texture_path = resolve_ros_path(material.texture.filename)
                     mesh.visual = trimesh.visual.texture.TextureVisuals(image=Image.open(texture_path))
-            log_trimesh(entity_path, mesh)
+            log_trimesh(self.root_path + entity_path, mesh)
 
 
 def log_trimesh(entity_path: str, mesh: trimesh.Trimesh) -> None:
