@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import rerun as rr
 import argparse
 import numpy as np
@@ -35,6 +36,7 @@ ILIAD
 
 """
 
+
 def path_to_link(link: int) -> str:
     return "/".join(f"panda_link{i}" for i in range(link + 1))
 
@@ -45,7 +47,7 @@ def log_angle_rot(urdf_logger: URDFLogger, link: int, angle_rad: int) -> None:
 
     link_to_rot_axis = np.array(
         [
-            [1, 0, 0], # unused
+            [1, 0, 0],  # unused
             [0, 0, 1],  # 1
             [0, 0, 1],  # 2
             [0, 0, 1],  # 3
@@ -84,7 +86,6 @@ def h5_tree(val, pre=""):
 
 
 class SVOCamera:
-
     left_images: list[np.array]
     right_images: list[np.array]
     depth_images: list[np.array]
@@ -100,10 +101,8 @@ class SVOCamera:
         init_params = sl.InitParameters()
         init_params.set_from_svo_file(svo_path)
         init_params.depth_mode = sl.DEPTH_MODE.QUALITY
-        init_params.svo_real_time_mode = True
-        init_params.coordinate_units = (
-            sl.UNIT.METER
-        )
+        init_params.svo_real_time_mode = False
+        init_params.coordinate_units = sl.UNIT.METER
         init_params.depth_minimum_distance = 0.2
 
         zed = sl.Camera()
@@ -138,10 +137,10 @@ class SVOCamera:
 
         self.left_dist_coeffs = params.left_cam.disto
         self.right_dist_coeffs = params.right_cam.disto
-        
+
         self.zed = zed
 
-    def get_next_frame(self) -> tuple[np.array, np.array, np.array] |  None:
+    def get_next_frame(self) -> tuple[np.array, np.array, np.array] | None:
         left_image = sl.Mat()
         right_image = sl.Mat()
         depth_image = sl.Mat()
@@ -161,31 +160,12 @@ class SVOCamera:
         else:
             return None
 
-    def log_params(self, entity_path: str, n: int):
-        rr.log(entity_path, rr.Transform3D(
-                translation = self.translation,
-                mat3x3=self.rot_mat
-            ),
-            timeless=True
-        )
-        rr.log(entity_path+"/camera", rr.Pinhole(
-                image_from_camera=self.left_intrinsic_mat,
-            ),
-            timeless=True
-        )
-
-    def log_images_and_depth(self, entity_path: str, n: int):
-        rr.log(entity_path+"/", rr.Pinhole(
-            
-        ))
-
 class DROIDScene:
-
     dir_path: Path
     trajectory_length: int
     metadata: dict
     cameras: dict[str, SVOCamera]
-    
+
     def __init__(self, dir_path: Path):
         self.dir_path = dir_path
 
@@ -204,11 +184,18 @@ class DROIDScene:
         camera_names = ["ext1", "ext2", "wrist"]
 
         self.serial = {
-            camera_name: self.metadata[f'{camera_name}_cam_serial'] for camera_name in camera_names
+            camera_name: self.metadata[f"{camera_name}_cam_serial"]
+            for camera_name in camera_names
         }
 
-        self.joint_positions = self.trajectory["observation"]["robot_state"]["joint_positions"]
-        self.joint_velocities = self.trajectory["observation"]["robot_state"]["joint_velocities"]
+        self.joint_positions = self.trajectory["observation"]["robot_state"][
+            "joint_positions"
+        ]
+        self.joint_velocities = self.trajectory["observation"]["robot_state"][
+            "joint_velocities"
+        ]
+
+        self.motor_torques_measured = self.trajectory["observation"]["robot_state"]["motor_torques_measured"]
 
         self.cameras = {}
         for camera_name in camera_names:
@@ -222,69 +209,218 @@ class DROIDScene:
             )
 
     def log_robot_states(self, urdf_logger: URDFLogger):
-        time_stamps_nanos = self.trajectory["observation"]["timestamp"]["robot_state"]["robot_timestamp_nanos"]
-        time_stamps_seconds = self.trajectory["observation"]["timestamp"]["robot_state"]["robot_timestamp_seconds"]
+        time_stamps_nanos = self.trajectory["observation"]["timestamp"]["robot_state"][
+            "robot_timestamp_nanos"
+        ]
+        time_stamps_seconds = self.trajectory["observation"]["timestamp"][
+            "robot_state"
+        ]["robot_timestamp_seconds"]
         for i in range(self.trajectory_length):
-            time_stamp = time_stamps_seconds[i]*int(1e9) + time_stamps_nanos[i]
+            time_stamp = time_stamps_seconds[i] * int(1e9) + time_stamps_nanos[i]
             rr.set_time_nanos("real_time", time_stamp)
 
             if i == 0:
                 # We want to log the robot here so that it appears in the right timeline
                 urdf_logger.log()
+                # print(self.metadata)
+                rr.log("task", rr.TextDocument(f'Current task: {self.metadata["current_task"]}', media_type="text/markdown"))
 
-            for (joint_idx, angle) in enumerate(self.joint_positions[i]):
-                log_angle_rot(urdf_logger, joint_idx+1, angle)
+            for joint_idx, angle in enumerate(self.joint_positions[i]):
+                log_angle_rot(urdf_logger, joint_idx + 1, angle)
 
-            for (camera_name, camera) in self.cameras.items():
-                time_stamp_camera = self.trajectory["observation"]["timestamp"]["cameras"][f"{self.serial[camera_name]}_estimated_capture"][i]
-                rr.set_time_nanos("real_time", time_stamp_camera*int(1e6))
+            for (j, vel) in enumerate(self.joint_velocities[i]):
+                rr.log(f"joint_velocity/{j}", rr.Scalar(vel))
+            
+            for (j, vel) in enumerate(self.motor_torques_measured[i]):
+                rr.log(f"motor_torque/{j}", rr.Scalar(vel))
 
-                extrinsics_left = self.trajectory["observation"]["camera_extrinsics"][f"{self.serial[camera_name]}_left"][i]
-                rotation = Rotation.from_euler('xyz', np.array(extrinsics_left[3:])).as_matrix()
+            # Log data from the cameras
+            for camera_name, camera in self.cameras.items():
+                time_stamp_camera = self.trajectory["observation"]["timestamp"][
+                    "cameras"
+                ][f"{self.serial[camera_name]}_estimated_capture"][i]
+                rr.set_time_nanos("real_time", time_stamp_camera * int(1e6))
 
-                rr.log(f"{camera_name}_camera/left", rr.Pinhole(
-                    image_from_camera=camera.left_intrinsic_mat,
-                )),
-                rr.log(f"{camera_name}_camera/left", rr.Transform3D(
-                    translation=np.array(extrinsics_left[:3]),
-                    mat3x3=rotation,
-                )),
+                extrinsics_left = self.trajectory["observation"]["camera_extrinsics"][
+                    f"{self.serial[camera_name]}_left"
+                ][i]
+                rotation = Rotation.from_euler(
+                    "xyz", np.array(extrinsics_left[3:])
+                ).as_matrix()
 
-                extrinsics_right = self.trajectory["observation"]["camera_extrinsics"][f"{self.serial[camera_name]}_right"][i]
-                rotation = Rotation.from_euler('xyz', np.array(extrinsics_right[3:])).as_matrix()
+                (
+                    rr.log(
+                        f"cameras/{camera_name}/left",
+                        rr.Pinhole(
+                            image_from_camera=camera.left_intrinsic_mat,
+                        ),
+                    ),
+                )
+                (
+                    rr.log(
+                        f"cameras/{camera_name}/left",
+                        rr.Transform3D(
+                            translation=np.array(extrinsics_left[:3]),
+                            mat3x3=rotation,
+                        ),
+                    ),
+                )
 
-                rr.log(f"{camera_name}_camera/right", rr.Pinhole(
-                    image_from_camera=camera.right_intrinsic_mat,
-                )),
-                rr.log(f"{camera_name}_camera/right", rr.Transform3D(
-                    translation=np.array(extrinsics_right[:3]),
-                    mat3x3=rotation,
-                )),
+                extrinsics_right = self.trajectory["observation"]["camera_extrinsics"][
+                    f"{self.serial[camera_name]}_right"
+                ][i]
+                rotation = Rotation.from_euler(
+                    "xyz", np.array(extrinsics_right[3:])
+                ).as_matrix()
 
-                depth_translation = (extrinsics_left[:3]+extrinsics_right[:3])/2
-                rotation = Rotation.from_euler('xyz', np.array(extrinsics_right[3:])).as_matrix()
+                (
+                    rr.log(
+                        f"cameras/{camera_name}/right",
+                        rr.Pinhole(
+                            image_from_camera=camera.right_intrinsic_mat,
+                        ),
+                    ),
+                )
+                (
+                    rr.log(
+                        f"cameras/{camera_name}/right",
+                        rr.Transform3D(
+                            translation=np.array(extrinsics_right[:3]),
+                            mat3x3=rotation,
+                        ),
+                    ),
+                )
 
-                rr.log(f"{camera_name}_camera/depth", rr.Pinhole(
-                    image_from_camera=camera.left_intrinsic_mat,
-                )),
-                rr.log(f"{camera_name}_camera/depth", rr.Transform3D(
-                    translation=depth_translation,
-                    mat3x3=rotation,
-                )),
+                depth_translation = (extrinsics_left[:3] + extrinsics_right[:3]) / 2
+                rotation = Rotation.from_euler(
+                    "xyz", np.array(extrinsics_right[3:])
+                ).as_matrix()
+
+                (
+                    rr.log(
+                        f"cameras/{camera_name}/depth",
+                        rr.Pinhole(
+                            image_from_camera=camera.left_intrinsic_mat,
+                        ),
+                    ),
+                )
+                (
+                    rr.log(
+                        f"cameras/{camera_name}/depth",
+                        rr.Transform3D(
+                            translation=depth_translation,
+                            mat3x3=rotation,
+                        ),
+                    ),
+                )
 
                 frames = camera.get_next_frame()
                 if frames:
                     left_image, right_image, depth_image = frames
-                    depth_image[depth_image > 1.5] = 0
 
-                    rr.log(f"{camera_name}_camera/left", rr.Image(left_image))
-                    rr.log(f"{camera_name}_camera/right", rr.Image(right_image))
-                    rr.log(f"{camera_name}_camera/depth", rr.DepthImage(depth_image))
+                    # To ignore points that are far away.
+                    depth_image[depth_image > 1.3] = 0
 
+                    rr.log(f"cameras/{camera_name}/left", rr.Image(left_image))
+                    rr.log(f"cameras/{camera_name}/right", rr.Image(right_image))
+                    rr.log(f"cameras/{camera_name}/depth", rr.DepthImage(depth_image))
+
+            
+            
 
 def main() -> None:
+    from rerun.blueprint import (
+        Blueprint,
+        BlueprintPanel,
+        Grid,
+        Horizontal,
+        Vertical,
+        SelectionPanel,
+        Spatial3DView,
+        TimePanel,
+        Spatial2DView,
+        TimeSeriesView,
+    )
+
+    camera_names = ["ext1", "ext2", "wrist"]
+    blueprint = Blueprint(
+        Horizontal(
+            Vertical(
+                Spatial3DView(
+                    name="robot view",
+                    origin="/",
+                    contents=["/**"]
+                ),
+                Horizontal(
+                    Spatial2DView(
+                        name="left_ext1",
+                        origin='cameras/ext1/left',
+                    ),
+                    Spatial2DView(
+                        name="right_ext1",
+                        origin='cameras/ext1/right',
+                    ),
+                    Spatial2DView(
+                        name="depth_ext1",
+                        origin='cameras/ext1/depth',
+                    ),
+                    Spatial2DView(
+                        name="left_wrist",
+                        origin='cameras/wrist/left',
+                    )
+                ),
+                Horizontal(
+                    Spatial2DView(
+                        name="left_ext2",
+                        origin='cameras/ext2/left',
+                    ),
+                    Spatial2DView(
+                        name="right_ext2",
+                        origin='cameras/ext2/right',
+                    ),
+                    Spatial2DView(
+                        name="depth_ext2",
+                        origin='cameras/ext2/depth',
+                    ),
+                    Spatial2DView(
+                        name="right_wirst",
+                        origin='cameras/wrist/right',
+                    )
+                ),
+                row_shares=[3, 1, 1]
+            ),
+            Vertical(
+                rr.blueprint.TextDocumentView(name="task", origin="/task", contents=["/task"]),
+                Horizontal(
+                    Vertical(
+                        *(TimeSeriesView(
+                            name="velocities",
+                            origin="joint_velocity/",
+                            contents=[f"joint_velocity/{i}"]
+                        ) for i in range(7)),
+                        
+                    ),
+                    Vertical(
+                        *(TimeSeriesView(
+                            name="torques",
+                            origin="motor_torque/",
+                            contents=[f"motor_torque/{i}"],
+                        )for i in range(7)),
+                    ),
+                ),
+                row_shares=[1,14]
+            ),
+            column_shares=[3, 2]
+        ),
+        BlueprintPanel(expanded=False),
+        SelectionPanel(expanded=False),
+        TimePanel(expanded=False),
+        auto_space_views=False,
+    )
+
     rr.init("DROID-visualized")
     rr.connect()
+    rr.send_blueprint(blueprint)
 
     parser = argparse.ArgumentParser(
         description="Visualizes the DROID dataset using Rerun."
@@ -293,14 +429,14 @@ def main() -> None:
     parser.add_argument("--urdf", default="franka_description/panda.urdf", type=Path)
     args = parser.parse_args()
 
-    scene = DROIDScene(args.data)    
-    
+    scene = DROIDScene(args.data)
+
     urdf_logger = URDFLogger(args.urdf)
-    
+
     scene.log_robot_states(urdf_logger)
-    
 
     return
+
 
 if __name__ == "__main__":
     main()
