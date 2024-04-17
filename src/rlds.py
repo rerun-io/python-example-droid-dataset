@@ -22,7 +22,6 @@ class RLDSDataset:
             ds = tfds.load(
                 "droid_100", data_dir="gs://gresearch/robotics", split="train"
             )
-            # builder = tfds.builder_from_directory(builder_dir='gs://gresearch/robotics/droid_100/1.0.0')
         else:
             ds = tfds.builder_from_directory(builder_dir=data).as_dataset()["train"]
 

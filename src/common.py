@@ -10,19 +10,6 @@ CAMERA_NAMES = ["ext1", "ext2", "wrist"]
 # Maps indices in X_position and X_velocity to their meaning.
 POS_DIM_NAMES = ['x', 'y', 'z', 'rot_x', 'rot_y', 'rot_z']
 
-def blueprint_col_cartesian_velocity(root: str, name: str):
-    from rerun.blueprint import Vertical, TimeSeriesView
-
-    if not root.endswith('/'):
-        root += '/'
-
-    return Vertical(
-        *(
-            TimeSeriesView(origin=root+dim_name) for dim_name in POS_DIM_NAMES
-        ),
-        name=name,
-    )
-
 def log_cartesian_velocity(root: str, cartesian_velocity: np.ndarray):
     if not root.endswith('/'):
         root += '/'

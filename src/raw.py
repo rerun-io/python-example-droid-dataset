@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-import pyzed.sl as sl
 import numpy as np
 from pathlib import Path
 import rerun as rr
+import cv2
 from scipy.spatial.transform import Rotation
 import glob
 import h5py
@@ -11,7 +11,7 @@ from common import h5_tree, CAMERA_NAMES, log_angle_rot, blueprint_row_images, e
 from rerun_loader_urdf import URDFLogger
 import argparse
 
-class SVOCamera:
+class StereoCamera:
     left_images: list[np.ndarray]
     right_images: list[np.ndarray]
     depth_images: list[np.ndarray]
@@ -23,75 +23,95 @@ class SVOCamera:
     right_dist_coeffs: np.ndarray
     right_intrinsic_mat: np.ndarray
 
-    def __init__(self, svo_path: Path):
-        init_params = sl.InitParameters()
-        init_params.set_from_svo_file(str(svo_path))
-        init_params.depth_mode = sl.DEPTH_MODE.QUALITY
-        init_params.svo_real_time_mode = False
-        init_params.coordinate_units = sl.UNIT.METER
-        init_params.depth_minimum_distance = 0.2
+    def __init__(self, recordings: Path, serial: int):
+        
+        try:
+            import pyzed.sl as sl
+            init_params = sl.InitParameters()
+            svo_path = recordings / "SVO" / f"{serial}.svo"
+            init_params.set_from_svo_file(str(svo_path))
+            init_params.depth_mode = sl.DEPTH_MODE.QUALITY
+            init_params.svo_real_time_mode = False
+            init_params.coordinate_units = sl.UNIT.METER
+            init_params.depth_minimum_distance = 0.2
 
-        zed = sl.Camera()
-        err = zed.open(init_params)
-        if err != sl.ERROR_CODE.SUCCESS:
-            raise Exception(f"Error reading camera data: {err}")
+            zed = sl.Camera()
+            err = zed.open(init_params)
+            if err != sl.ERROR_CODE.SUCCESS:
+                raise Exception(f"Error reading camera data: {err}")
 
-        params = (
-            zed.get_camera_information().camera_configuration.calibration_parameters
-        )
+            params = (
+                zed.get_camera_information().camera_configuration.calibration_parameters
+            )
+            
+            self.left_intrinsic_mat = np.array(
+                [
+                    [params.left_cam.fx, 0, params.left_cam.cx],
+                    [0, params.left_cam.fy, params.left_cam.cy],
+                    [0, 0, 1],
+                ]
+            )
+            self.right_intrinsic_mat = np.array(
+                [
+                    [params.right_cam.fx, 0, params.right_cam.cx],
+                    [0, params.right_cam.fy, params.right_cam.cy],
+                    [0, 0, 1],
+                ]
+            )
+            self.zed = zed
+        except ModuleNotFoundError:
+            # pyzed isn't installed we can't find its intrinsic parameters
+            # so we will have to make a guess.
+            self.left_intrinsic_mat = np.array([
+                [733.37261963,   0.,         625.26251221],
+                [  0.,         733.37261963,  361.92279053],
+                [  0.,           0.,           1.,        ]
+            ])
+            self.right_intrinsic_mat = self.left_intrinsic_mat
+            mp4_path = recordings / "MP4" / f'{serial}-stereo.mp4'
+            self.cap = cv2.VideoCapture(str(mp4_path))
 
-        # Assumes both the cameras have the same resolution.
-        resolution = zed.get_camera_information().camera_configuration.resolution
-        self.width = resolution.width
-        self.height = resolution.height
 
-        self.left_intrinsic_mat = np.array(
-            [
-                [params.left_cam.fx, 0, params.left_cam.cx],
-                [0, params.left_cam.fy, params.left_cam.cy],
-                [0, 0, 1],
-            ]
-        )
-        self.right_intrinsic_mat = np.array(
-            [
-                [params.right_cam.fx, 0, params.right_cam.cx],
-                [0, params.right_cam.fy, params.right_cam.cy],
-                [0, 0, 1],
-            ]
-        )
-        self.left_dist_coeffs = params.left_cam.disto
-        self.right_dist_coeffs = params.right_cam.disto
+    def get_next_frame(self) -> tuple[np.ndarray, np.ndarray, np.ndarray | None] | None:
+        """Gets the the next from both cameras and maybe computes the depth."""
 
-        self.zed = zed
+        if hasattr(self, "zed"):
+            # We have the ZED SDK installed.
+            import pyzed.sl as sl
+            left_image = sl.Mat()
+            right_image = sl.Mat()
+            depth_image = sl.Mat()
 
-    def get_next_frame(self) -> tuple[np.array, np.array, np.array] | None:
-        """Gets the the next from both cameras and computes the depth."""
+            rt_param = sl.RuntimeParameters()
+            err = self.zed.grab(rt_param)
+            if err == sl.ERROR_CODE.SUCCESS:
+                self.zed.retrieve_image(left_image, sl.VIEW.LEFT)
+                left_image = np.array(left_image.numpy())
 
-        left_image = sl.Mat()
-        right_image = sl.Mat()
-        depth_image = sl.Mat()
+                self.zed.retrieve_image(right_image, sl.VIEW.RIGHT)
+                right_image = np.array(right_image.numpy())
 
-        rt_param = sl.RuntimeParameters()
-        err = self.zed.grab(rt_param)
-        if err == sl.ERROR_CODE.SUCCESS:
-            self.zed.retrieve_image(left_image, sl.VIEW.LEFT)
-            left_image = np.array(left_image.numpy())
-
-            self.zed.retrieve_image(right_image, sl.VIEW.RIGHT)
-            right_image = np.array(right_image.numpy())
-
-            self.zed.retrieve_measure(depth_image, sl.MEASURE.DEPTH)
-            depth_image = np.array(depth_image.numpy())
-            return (left_image, right_image, depth_image)
+                self.zed.retrieve_measure(depth_image, sl.MEASURE.DEPTH)
+                depth_image = np.array(depth_image.numpy())
+                return (left_image, right_image, depth_image)
+            else:
+                return None
         else:
-            return None
-
+            # We don't have the ZED sdk installed
+            ret, frame = self.cap.read()
+            if ret:
+                left_image = frame[:,:1280,:]
+                right_image = frame[:,1280:,:]
+                return (left_image, right_image, None)
+            else:
+                print("empty!")
+                return None
 
 class RawScene:
     dir_path: Path
     trajectory_length: int
     metadata: dict
-    cameras: dict[str, SVOCamera]
+    cameras: dict[str, StereoCamera]
 
     def __init__(self, dir_path: Path):
         self.dir_path = dir_path
@@ -112,26 +132,17 @@ class RawScene:
 
         self.trajectory_length = self.metadata["trajectory_length"]
 
+        # Mapping from camera name to it's serial number.
         self.serial = {
             camera_name: self.metadata[f"{camera_name}_cam_serial"]
             for camera_name in CAMERA_NAMES
         }
 
-        self.joint_positions = self.trajectory["observation"]["robot_state"][
-            "joint_positions"
-        ]
-        self.joint_velocities = self.trajectory["observation"]["robot_state"][
-            "joint_velocities"
-        ]
-
-        self.motor_torques_measured = self.trajectory["observation"]["robot_state"][
-            "motor_torques_measured"
-        ]
-
         self.cameras = {}
         for camera_name in CAMERA_NAMES:
-            self.cameras[camera_name] = SVOCamera(
-                self.dir_path / "recordings" / "SVO" / f"{self.serial[camera_name]}.svo"
+            self.cameras[camera_name] = StereoCamera(
+                self.dir_path / "recordings",
+                self.serial[camera_name]
             )
 
     def log_cameras_next(self, i: int) -> None:
@@ -217,11 +228,13 @@ class RawScene:
                     left_image, right_image, depth_image = frames
 
                     # Ignore points that are far away.
-                    depth_image[depth_image > 1.3] = 0
 
                     rr.log(f"cameras/{camera_name}/left", rr.Image(left_image))
                     rr.log(f"cameras/{camera_name}/right", rr.Image(right_image))
-                    rr.log(f"cameras/{camera_name}/depth", rr.DepthImage(depth_image))
+
+                    if depth_image is not None:
+                        depth_image[depth_image > 1.3] = 0
+                        rr.log(f"cameras/{camera_name}/depth", rr.DepthImage(depth_image))
 
     def log_action(self, i: int) -> None:
         pose = self.trajectory['action']['cartesian_position'][i]
@@ -245,18 +258,18 @@ class RawScene:
         rr.log('action/target_gripper_position', rr.Scalar(self.action['target_gripper_position'][i]))
         
     def log_robot_state(self, i: int, entity_to_transform: dict[str, tuple[np.ndarray, np.ndarray]]) -> None:
-        for joint_idx, angle in enumerate(self.joint_positions[i]):
+        for joint_idx, angle in enumerate(self.robot_state['joint_positions'][i]):
             log_angle_rot(entity_to_transform, joint_idx + 1, angle)
 
         rr.log('robot_state/gripper_position', rr.Scalar(self.robot_state['gripper_position'][i]))
 
-        for j, vel in enumerate(self.joint_velocities[i]):
+        for j, vel in enumerate(self.robot_state['joint_velocities'][i]):
             rr.log(f"robot_state/joint_velocities/{j}", rr.Scalar(vel))
 
         for j, vel in enumerate(self.robot_state['joint_torques_computed'][i]):
             rr.log(f"robot_state/joint_torques_computed/{j}", rr.Scalar(vel))
 
-        for j, vel in enumerate(self.motor_torques_measured[i]):
+        for j, vel in enumerate(self.robot_state['motor_torques_measured'][i]):
             rr.log(f"robot_state/motor_torques_measured/{j}", rr.Scalar(vel))
 
     def log(self, urdf_logger) -> None:
