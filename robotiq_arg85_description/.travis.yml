@@ -1,0 +1,13 @@
+language: python
+sudo: required
+services:
+ - docker
+before_install:
+ - docker pull ros:kinetic-robot
+ - docker run -it -d --name build ros:kinetic-robot bash
+ - docker exec -it build bash -c "cd ~/ && mkdir -p ~/catkin_ws/src && source /opt/ros/kinetic/setup.bash && catkin_init_workspace"
+ - docker exec -it build bash -c "cd ~/catkin_ws/src && git clone --branch ${TRAVIS_BRANCH} https://github.com/${TRAVIS_REPO_SLUG}.git"
+ - docker exec -it build bash -c "cd ~/catkin_ws && apt update && source /opt/ros/kinetic/setup.bash && rosdep install --from-paths src --ignore-src -r -y && rm -rf /var/lib/apt/lists/*"
+script:
+ - docker exec -it build bash -c "source /opt/ros/kinetic/setup.bash && cd ~/catkin_ws && catkin_make"
+ - docker exec -it build bash -c "source ~/catkin_ws/devel/setup.bash && roscd robotiq_arg85_description && rosrun roslaunch roslaunch-check launch"

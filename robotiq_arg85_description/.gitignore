@@ -1,0 +1,9 @@
+*~
+*.swp
+*.autosave
+*.orig
+*.log
+*.aux
+*.pdf
+*.gz
+dox/

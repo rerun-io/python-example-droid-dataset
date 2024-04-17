@@ -1,0 +1,16 @@
+<package format="2">
+  <name>robotiq_arg85_description</name>
+  <version>1.0.0</version>
+  <description>URDF files for Robotiq 2-Finger Adaptive Robot Gripper.</description>
+  <maintainer email="arprice@gatech.edu">Andrew Price</maintainer>
+  <license>BSD</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <exec_depend>joint_state_publisher</exec_depend>
+  <exec_depend>joint_state_publisher_gui</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>rviz</exec_depend>
+
+  <test_depend>roslaunch</test_depend>
+</package>

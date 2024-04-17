@@ -3,7 +3,7 @@
 https://github.com/rerun-io/python-example-droid-dataset/assets/28707703/95bdb869-1252-4bf6-af9b-e913829fb949
 
 ## Viewing the RLDS version
-The RLDS version is a version of the DROID dataset preprocessed to be more suitable for machine learning models. It contains downscaleded images from the left camera from each stereo camera and removes unnecesseary data such as `motor_torques_measured`.
+The RLDS version is a version of the DROID dataset preprocessed to be more suitable for machine learning models. It contains downscaleded images from the left camera of each stereo camera and removes unnecesseary data such as `motor_torques_measured`.
 
 The easiest way to get started is just by running:
 ```bash
@@ -34,7 +34,7 @@ src/raw.py --scene data/Sun_Jun_11_15:52:37_2023/
 ```
 
 ## Viewing the raw dataset without depth images (doesn't require CUDA)
-We can view the raw dataset without using ZED SDK by reading the mp4 files, the problem is that the intrinsic parameters of the cameras are stored in the `.svo` file so it will have to guess them.
+We can view the raw dataset without using ZED SDK by reading the mp4 files, the problem is that the intrinsic parameters of the cameras are stored in the `.svo` file so we will have to guess them.
 
 To download and view an episode run the following:
 ```bash

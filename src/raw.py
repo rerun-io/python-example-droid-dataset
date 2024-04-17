@@ -340,7 +340,7 @@ def blueprint_raw():
                 ),
                 Vertical(
                     *(
-                        TimeSeriesView(origin=f'action/joint_velocity/{i}') for i in range(7)
+                        TimeSeriesView(origin=f'action/joint_velocity/{i}') for i in range(6)
                     ),
                     name='action/joint_velocity'
                 ),
