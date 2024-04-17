@@ -38,9 +38,7 @@ def main() -> None:
     else:
         print("You must specify a path to the data, either by using --raw-data or --rlds-data")
         sys.exit()
-    
-
-
+        
     return
 
 if __name__ == "__main__":

@@ -5,3 +5,4 @@ __pycache__/
 data/
 /metadata.json
 aggregated-annotations-030724.json
+shell.nix
