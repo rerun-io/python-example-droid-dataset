@@ -1,5 +1,3 @@
 #!/usr/bin/env bash
-cd "$(dirname "$0")"
 
-# Attach terminal to the docker context
-docker exec -it ubuntu_container fish
+docker exec -it ubuntu_container fish # Who wouldn't wanna use fish?

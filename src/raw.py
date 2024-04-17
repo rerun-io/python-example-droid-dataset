@@ -373,8 +373,7 @@ def blueprint_raw():
     return blueprint
 
 def main():
-    rr.init("DROID-visualized")
-    rr.connect()
+    rr.init("DROID-visualized", spawn=True)
 
     parser = argparse.ArgumentParser(
         description="Visualizes the DROID dataset using Rerun."
