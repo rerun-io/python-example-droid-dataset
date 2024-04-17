@@ -1,5 +1,6 @@
 # Visualization of the [DROID dataset](https://droid-dataset.github.io/) using [Rerun](https://www.rerun.io/)
 
+https://github.com/rerun-io/python-example-droid-dataset/assets/28707703/95bdb869-1252-4bf6-af9b-e913829fb949
 
 ## Viewing the RLDS version
 The RLDS version is a version of the DROID dataset preprocessed to be more suitable for machine learning models. It contains downscaleded images from the left camera from each stereo camera and removes unnecesseary data such as `motor_torques_measured`.
