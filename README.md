@@ -34,7 +34,7 @@ src/raw.py --scene data/Sun_Jun_11_15:52:37_2023/
 ```
 
 ## Viewing the raw dataset without depth images (doesn't require CUDA)
-We can view the raw dataset without using ZED SDK by reading the mp4 files, the problem is that the intrinsic parameters of the cameras are stored in the `.svo` file so we will have to guess them.
+We can view the raw dataset without using ZED SDK by reading the mp4 files, the problem is that the intrinsic parameters of the cameras are stored in the `.svo` file so we will have to guess what they are.
 
 To download and view an episode run the following:
 ```bash
