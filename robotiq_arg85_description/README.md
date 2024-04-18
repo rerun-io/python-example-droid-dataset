@@ -1,3 +1,5 @@
+This folder is a modified version of https://github.com/a-price/robotiq_arg85_description where I added a `.xacro` file so that it could easily be combined with Franka Robot `.xacro`
+
 robotiq_arg85_description
 =========================
 

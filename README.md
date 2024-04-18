@@ -42,6 +42,3 @@ mkdir -p data && gsutil -m cp -r gs://gresearch/robotics/droid_raw/1.0.1/ILIAD/s
 pip install -r requirements.txt
 src/raw.py --scene data/Sun_Jun_11_15:52:37_2023/
 ```
-
-### Acknowledgements
-The URDF model for the hand is taken from [robotiq_arg85_description](https://github.com/a-price/robotiq_arg85_description) and the model for the robot is from [franka_ros](https://github.com/frankaemika/franka_ros)
