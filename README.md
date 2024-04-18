@@ -17,7 +17,7 @@ Viewing the raw dataset is a bit trickier because the metadata for stereo camera
 
 First we must download the data
 ```bash
-gsutil -m cp -r gs://gresearch/robotics/droid_raw/1.0.1/ILIAD/success/2023-06-11/Sun_Jun_11_15:52:37_2023 data/
+mkdir -p data && gsutil -m cp -r gs://gresearch/robotics/droid_raw/1.0.1/ILIAD/success/2023-06-11/Sun_Jun_11_15:52:37_2023 data/
 ```
 then we can build and run the docker container.
 ```bash
@@ -38,7 +38,7 @@ We can view the raw dataset without using ZED SDK by reading the mp4 files, the 
 
 To download and view an episode run the following:
 ```bash
-gsutil -m cp -r gs://gresearch/robotics/droid_raw/1.0.1/ILIAD/success/2023-06-11/Sun_Jun_11_15:52:37_2023 data/
+mkdir -p data && gsutil -m cp -r gs://gresearch/robotics/droid_raw/1.0.1/ILIAD/success/2023-06-11/Sun_Jun_11_15:52:37_2023 data/
 pip install -r requirements.txt
 src/raw.py --scene data/Sun_Jun_11_15:52:37_2023/
 ```

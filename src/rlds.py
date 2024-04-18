@@ -14,20 +14,16 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 import tensorflow as tf
 import tensorflow_datasets as tfds
 
-
 class RLDSDataset:
     def __init__(self, data: Path | None = None):
         if data is None:
-            print("Warning: no scene picked, downloads the droid_100 dataset")
+            print("No scene picked, downloads the droid_100 dataset, might be a bit slow!")
 
             ds = tfds.load(
                 "droid_100", data_dir="gs://gresearch/robotics", split="train"
             )
         else:
             ds = tfds.builder_from_directory(builder_dir=data).as_dataset()["train"]
-
-        # builder.download_and_prepare()
-        # ds = builder.as_dataset()
 
         self.ds = ds
 
@@ -76,6 +72,12 @@ class RLDSDataset:
             for step in episode["steps"]:
                 rr.set_time_nanos("real_time", cur_time_ns)
                 cur_time_ns += int((1e9 * 1 / 15))
+                rr.log("instructions", rr.TextDocument(f'''
+**instruction 1**: {bytearray(step["language_instruction"].numpy()).decode()}
+**instruction 2**: {bytearray(step["language_instruction_2"].numpy()).decode()}
+**instruction 3**: {bytearray(step["language_instruction_3"].numpy()).decode()}
+''',
+                    media_type="text/markdown"))
                 self.log_images(step)
                 self.log_robot_states(step, entity_to_transform)
                 self.log_action_dict(step)
@@ -91,6 +93,7 @@ class RLDSDataset:
             Tabs,
             SelectionPanel,
             TimePanel,
+            TextDocumentView
         )
 
         return Blueprint(
@@ -109,35 +112,39 @@ class RLDSDataset:
                     ),
                     row_shares=[3, 1],
                 ),
-                Tabs( # Tabs for all the different time serieses.
-                    Vertical(
-                        *(
-                            TimeSeriesView(origin=f"/action_dict/joint_velocity/{i}")
-                            for i in range(7)
+                Vertical(
+                    Tabs( # Tabs for all the different time serieses.
+                        Vertical(
+                            *(
+                                TimeSeriesView(origin=f"/action_dict/joint_velocity/{i}")
+                                for i in range(7)
+                            ),
+                            name="joint velocity",
                         ),
-                        name="joint velocity",
-                    ),
-                    Vertical(
-                        *(
-                            TimeSeriesView(origin=f"/action_dict/cartesian_velocity/{i}")
-                            for i in range(6)
+                        Vertical(
+                            *(
+                                TimeSeriesView(origin=f"/action_dict/cartesian_velocity/{i}")
+                                for i in range(6)
+                            ),
+                            name="cartesian position",
                         ),
-                        name="cartesian position",
+                        Vertical(
+                            TimeSeriesView(origin="/action_dict/gripper_position"),
+                            TimeSeriesView(origin="/action_dict/gripper_velocity"),
+                            name="gripper",
+                        ),
+                        TimeSeriesView(origin="/discount"),
+                        TimeSeriesView(origin="/reward"),
                     ),
-                    Vertical(
-                        TimeSeriesView(origin="/action_dict/gripper_position"),
-                        TimeSeriesView(origin="/action_dict/gripper_velocity"),
-                        name="gripper",
-                    ),
-                    TimeSeriesView(origin="/discount"),
-                    TimeSeriesView(origin="/reward"),
+                    TextDocumentView(origin='instructions'),
+                    row_shares=[7, 1]
                 ),
                 column_shares=[3, 1],
             ),
             SelectionPanel(expanded=False),
             TimePanel(expanded=False),
         )
-    
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Visualizes the DROID dataset using Rerun."
@@ -149,14 +156,16 @@ def main() -> None:
 
     urdf_logger = URDFLogger(args.urdf)
     rlds_scene = RLDSDataset(args.data)
-
+    
     rr.init("DROID-visualized", spawn=True)
 
     rr.send_blueprint(rlds_scene.blueprint())
 
+    rr.set_time_nanos("real_time", 0)
     urdf_logger.log()
     rlds_scene.log_robot_dataset(urdf_logger.entity_to_transform)
 
 
 if __name__ == "__main__":
     main()
+    rr.log("annotation", rr.TextDocument("annotaion_1",media_type="text/markdown"))
