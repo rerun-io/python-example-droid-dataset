@@ -1,5 +1,5 @@
 absl-py==1.4.0
-array_record==0.5.1
+array_record==0.4.1
 astunparse==1.6.3
 attrs==23.2.0
 certifi==2024.2.2
@@ -62,3 +62,4 @@ Werkzeug==3.0.2
 wrapt==1.16.0
 zipp==3.18.1
 opencv-python==4.9.0.80
+rerun-loader-python-example-urdf @ git+https://github.com/rerun-io/rerun-loader-python-example-urdf.git

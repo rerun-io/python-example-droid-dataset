@@ -7,12 +7,10 @@ from scipy.spatial.transform import Rotation
 from common import log_angle_rot, blueprint_row_images
 import rerun as rr
 import argparse
-import sys
 
 # Hide those pesky warnings.
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-import tensorflow as tf
-import tensorflow_datasets as tfds
+import tensorflow_datasets as tfds  # noqa: E402
 
 class RLDSDataset:
     def __init__(self, data: Path | None = None):
@@ -135,6 +133,7 @@ class RLDSDataset:
                         ),
                         TimeSeriesView(origin="/discount"),
                         TimeSeriesView(origin="/reward"),
+                        active_tab=0,
                     ),
                     TextDocumentView(origin='instructions'),
                     row_shares=[7, 1]
