@@ -3,7 +3,7 @@
 https://github.com/rerun-io/python-example-droid-dataset/assets/28707703/95bdb869-1252-4bf6-af9b-e913829fb949
 
 ## Viewing the RLDS version
-The RLDS version is a version of the DROID dataset preprocessed to be more suitable for machine learning models. It contains downscaleded images from the left camera of each stereo camera and removes unnecesseary data such as `motor_torques_measured`.
+RLDS is a version of the DROID dataset preprocessed to be more suitable for machine learning models. It contains downscaleded images from the left camera of each stereo camera and removes unnecesseary data such as `motor_torques_measured`.
 
 The easiest way to get started is just by running:
 ```bash
@@ -42,3 +42,6 @@ mkdir -p data && gsutil -m cp -r gs://gresearch/robotics/droid_raw/1.0.1/ILIAD/s
 pip install -r requirements.txt
 src/raw.py --scene data/Sun_Jun_11_15:52:37_2023/
 ```
+
+### Acknowledgements
+The URDF model for the hand is taken from [robotiq_arg85_description](https://github.com/a-price/robotiq_arg85_description) and the model for the robot is from [franka_ros](https://github.com/frankaemika/franka_ros)
