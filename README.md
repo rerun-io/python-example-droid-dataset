@@ -3,7 +3,7 @@
 https://github.com/rerun-io/python-example-droid-dataset/assets/28707703/95bdb869-1252-4bf6-af9b-e913829fb949
 
 ## Viewing the RLDS version
-RLDS is a version of the DROID dataset preprocessed to be more suitable for machine learning models. It contains downscaleded images from the left camera of each stereo camera and removes unnecesseary data such as `motor_torques_measured`.
+RLDS is a version of the DROID dataset preprocessed to be more suitable for machine learning models. It contains downscaleded images from the left camera of each stereo camera and removes unnecessary data such as `motor_torques_measured`.
 
 The easiest way to get started is just by running:
 ```bash
@@ -11,6 +11,8 @@ pip install -r requirements.txt
 src/rlds.py
 ```
 This will download a sample of 100 episodes and display them in the rerun viewer.
+
+You need Python 3.11 to run this demo (newer versions are not supported right now).
 
 ## Viewing the raw dataset with depth images (requires CUDA)
 Viewing the raw dataset is a bit trickier because the metadata for stereo cameras are stored in `.svo` files which is a proprietary file format. To read these files one must install the ZED SDK and to run it you must have CUDA installed. To easily do both of these things we will use Docker.
