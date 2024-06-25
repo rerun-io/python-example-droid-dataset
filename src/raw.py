@@ -165,8 +165,7 @@ class RawScene:
         The motivation behind this is to avoid storing all the frames in a `list` because
         that would take up too much memory.
         """
-# src/raw.py --scene data/2023-12-24/Sun_Dec_24_17:28:12
-# _2023_24_17:28:12_2023
+
         for camera_name, camera in self.cameras.items():
                 time_stamp_camera = self.trajectory["observation"]["timestamp"][
                     "cameras"
