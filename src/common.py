@@ -23,7 +23,10 @@ def link_to_world_transform(
 
         start_translation, start_rotation_mat = entity_to_transform[entity_path]
 
-        angle_rad = joint_angles[i-1]
+        if i-1 >= len(joint_angles):
+            angle_rad = 0
+        else:
+            angle_rad = joint_angles[i-1]
         vec = np.array(np.array([0, 0, 1]) * angle_rad)
         
         rot = Rotation.from_rotvec(vec).as_matrix()

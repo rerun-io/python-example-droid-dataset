@@ -243,7 +243,7 @@ class RawScene:
                     rr.log(f"cameras/{camera_name}/right", rr.Image(right_image))
 
                     if depth_image is not None:
-                        depth_image[depth_image > 1.3] = 0
+                        depth_image[depth_image > 1.8] = 0
                         rr.log(f"cameras/{camera_name}/depth", rr.DepthImage(depth_image))
 
     def log_action(self, i: int) -> None:
@@ -273,18 +273,19 @@ class RawScene:
         for joint_idx, angle in enumerate(joint_angles):
             log_angle_rot(entity_to_transform, joint_idx + 1, angle)
 
-        lines = []
-        for j in range(i+1):
-            joint_angles = self.robot_state['joint_positions'][j]
-            joint_origins = []
-            for joint_idx in range(len(joint_angles)):
-                transform = link_to_world_transform(entity_to_transform, joint_angles, joint_idx+1)
-                joint_org = (transform @ np.array([0.0, 0.0, 0.0, 1.0]))[:3]
-                joint_origins.append(list(joint_org))
-            lines.append(joint_origins)
-        
-        for traj in range(len(lines[0])):
-            rr.log(f"trajectory/{traj}", rr.LineStrips3D([origins[traj] for origins in lines]))
+        if i > 1:
+            lines = []
+            for j in range(i-1, i+1):
+                joint_angles = self.robot_state['joint_positions'][j]
+                joint_origins = []
+                for joint_idx in range(len(joint_angles)+1):
+                    transform = link_to_world_transform(entity_to_transform, joint_angles, joint_idx+1)
+                    joint_org = (transform @ np.array([0.0, 0.0, 0.0, 1.0]))[:3]
+                    joint_origins.append(list(joint_org))
+                lines.append(joint_origins)
+            
+            for traj in range(len(lines[0])):
+                rr.log(f"trajectory/{traj}", rr.LineStrips3D([origins[traj] for origins in lines]))
         
         rr.log('robot_state/gripper_position', rr.Scalar(self.robot_state['gripper_position'][i]))
 
