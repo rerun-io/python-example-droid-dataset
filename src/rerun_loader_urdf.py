@@ -164,7 +164,7 @@ def log_trimesh(entity_path: str, mesh: trimesh.Trimesh) -> None:
         entity_path,
         rr.Mesh3D(
             vertex_positions=mesh.vertices,
-            indices=mesh.faces,
+            triangle_indices=mesh.faces,
             vertex_normals=mesh.vertex_normals,
             vertex_colors=vertex_colors,
             albedo_texture=albedo_texture,

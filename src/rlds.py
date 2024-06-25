@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 from rerun_loader_urdf import URDFLogger
 from scipy.spatial.transform import Rotation
-from common import log_angle_rot, blueprint_row_images
+from common import log_angle_rot, blueprint_row_images, link_to_world_transform
 import rerun as rr
 import argparse
 
@@ -34,16 +34,30 @@ class RLDSDataset:
             rr.log(f"/cameras/{cam}", rr.Image(step["observation"][cam].numpy()))
 
     def log_robot_states(self, step, entity_to_transform):
-        for joint_idx, angle in enumerate(step["observation"]["joint_position"]):
+        
+        joint_angles = step["observation"]["joint_position"]
+
+        joint_origins = []
+        for joint_idx, angle in enumerate(joint_angles):
+            transform = link_to_world_transform(entity_to_transform, joint_angles, joint_idx+1)
+            joint_org = (transform @ np.array([0.0, 0.0, 0.0, 1.0]))[:3]
+            joint_origins.append(joint_org)
+
             log_angle_rot(entity_to_transform, joint_idx + 1, angle)
+
+        rr.log("/joint_origins/", rr.Points3D(joint_origins))
 
     def log_action_dict(self, step):
         pose = step["action_dict"]["cartesian_position"]
         translation = pose[:3]
         rotation_mat = Rotation.from_euler("xyz", pose[3:]).as_matrix()
         rr.log(
-            "/action_dict/cartesian_position",
+            "/action_dict/cartesian_position/cord",
             rr.Transform3D(translation=translation, mat3x3=rotation_mat),
+        )
+        rr.log(
+            "/action_dict/cartesian_position/origin",
+            rr.Points3D([translation])
         )
 
         for i, vel in enumerate(step["action_dict"]["cartesian_velocity"]):

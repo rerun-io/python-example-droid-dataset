@@ -7,7 +7,7 @@ from scipy.spatial.transform import Rotation
 import glob
 import h5py
 import json
-from common import h5_tree, CAMERA_NAMES, log_angle_rot, blueprint_row_images, extract_extrinsics, log_cartesian_velocity, POS_DIM_NAMES
+from common import h5_tree, CAMERA_NAMES, log_angle_rot, blueprint_row_images, extract_extrinsics, log_cartesian_velocity, POS_DIM_NAMES, link_to_world_transform
 from rerun_loader_urdf import URDFLogger
 import argparse
 
@@ -68,8 +68,18 @@ class StereoCamera:
                 [  0.,           0.,           1.,        ]
             ])
             self.right_intrinsic_mat = self.left_intrinsic_mat
+            
             mp4_path = recordings / "MP4" / f'{serial}-stereo.mp4'
+            if (recordings / "MP4" / f'{serial}-stereo.mp4').exists():
+                mp4_path = recordings / "MP4" / f'{serial}-stereo.mp4'
+            elif (recordings / "MP4" / f'{serial}.mp4').exists():
+                # Sometimes they don't have the '-stereo' suffix
+                mp4_path = recordings / "MP4" / f'{serial}.mp4'
+            else:
+                raise Exception(f"unable to video file for camera {serial}")
+
             self.cap = cv2.VideoCapture(str(mp4_path))
+            print(f"opening {mp4_path}")
 
 
     def get_next_frame(self) -> tuple[np.ndarray, np.ndarray, np.ndarray | None] | None:
@@ -155,7 +165,8 @@ class RawScene:
         The motivation behind this is to avoid storing all the frames in a `list` because
         that would take up too much memory.
         """
-
+# src/raw.py --scene data/2023-12-24/Sun_Dec_24_17:28:12
+# _2023_24_17:28:12_2023
         for camera_name, camera in self.cameras.items():
                 time_stamp_camera = self.trajectory["observation"]["timestamp"][
                     "cameras"
@@ -239,8 +250,8 @@ class RawScene:
     def log_action(self, i: int) -> None:
         pose = self.trajectory['action']['cartesian_position'][i]
         trans, mat = extract_extrinsics(pose)
-        rr.log('action/cartesian_position', rr.Transform3D(translation=trans, mat3x3=mat))
-        rr.log('action/cartesian_position', rr.Points3D([0, 0, 0], radii=0.02))
+        rr.log('action/cartesian_position/transform', rr.Transform3D(translation=trans, mat3x3=mat))
+        rr.log('action/cartesian_position/origin', rr.Points3D([trans]))
 
         log_cartesian_velocity('action/cartesian_velocity', self.action['cartesian_velocity'][i])
 
@@ -252,15 +263,30 @@ class RawScene:
 
         pose = self.trajectory['action']['target_cartesian_position'][i]
         trans, mat = extract_extrinsics(pose)
-        rr.log('action/target_cartesian_position', rr.Transform3D(translation=trans, mat3x3=mat))
-        rr.log('action/target_cartesian_position', rr.Points3D([0, 0, 0], radii=0.02))
+        rr.log('action/target_cartesian_position/transform', rr.Transform3D(translation=trans, mat3x3=mat))
+        rr.log('action/target_cartesian_position/origin', rr.Points3D([trans]))
 
         rr.log('action/target_gripper_position', rr.Scalar(self.action['target_gripper_position'][i]))
         
     def log_robot_state(self, i: int, entity_to_transform: dict[str, tuple[np.ndarray, np.ndarray]]) -> None:
-        for joint_idx, angle in enumerate(self.robot_state['joint_positions'][i]):
+        
+        joint_angles = self.robot_state['joint_positions'][i]
+        for joint_idx, angle in enumerate(joint_angles):
             log_angle_rot(entity_to_transform, joint_idx + 1, angle)
 
+        lines = []
+        for j in range(i+1):
+            joint_angles = self.robot_state['joint_positions'][j]
+            joint_origins = []
+            for joint_idx in range(len(joint_angles)):
+                transform = link_to_world_transform(entity_to_transform, joint_angles, joint_idx+1)
+                joint_org = (transform @ np.array([0.0, 0.0, 0.0, 1.0]))[:3]
+                joint_origins.append(list(joint_org))
+            lines.append(joint_origins)
+        
+        for traj in range(len(lines[0])):
+            rr.log(f"trajectory/{traj}", rr.LineStrips3D([origins[traj] for origins in lines]))
+        
         rr.log('robot_state/gripper_position', rr.Scalar(self.robot_state['gripper_position'][i]))
 
         for j, vel in enumerate(self.robot_state['joint_velocities'][i]):
