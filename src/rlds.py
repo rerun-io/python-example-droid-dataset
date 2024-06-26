@@ -23,6 +23,7 @@ class RLDSDataset:
         else:
             ds = tfds.builder_from_directory(builder_dir=data).as_dataset()["train"]
         self.prev_joint_origins = None
+        self.joint_offsets: list[float] = []
         self.ds = ds
 
     def log_images(self, step):
@@ -35,7 +36,10 @@ class RLDSDataset:
 
     def log_robot_states(self, step, entity_to_transform):
         
-        joint_angles = step["observation"]["joint_position"]
+        joint_angles = step["observation"]["joint_position"].numpy()
+        for (i, offset) in enumerate(self.joint_offsets):
+            if i < len(joint_angles):
+                joint_angles[i] += offset
 
         joint_origins = []
         for joint_idx, angle in enumerate(joint_angles):
@@ -170,10 +174,12 @@ def main() -> None:
 
     parser.add_argument("--data", required=False, type=Path)
     parser.add_argument("--urdf", default="franka_description/panda.urdf", type=Path)
+    parser.add_argument("--joint-offsets", required=False, default="0,0,0,0,0,0,0", type=str)
     args = parser.parse_args()
 
     urdf_logger = URDFLogger(args.urdf)
     rlds_scene = RLDSDataset(args.data)
+    rlds_scene.joint_offsets = list(map(float, args.joint_offsets.split(',')))
     
     rr.init("DROID-visualized", spawn=True)
 
