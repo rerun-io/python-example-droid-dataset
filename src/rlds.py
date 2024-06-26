@@ -22,7 +22,7 @@ class RLDSDataset:
             )
         else:
             ds = tfds.builder_from_directory(builder_dir=data).as_dataset()["train"]
-
+        self.prev_joint_origins = None
         self.ds = ds
 
     def log_images(self, step):
@@ -45,7 +45,12 @@ class RLDSDataset:
 
             log_angle_rot(entity_to_transform, joint_idx + 1, angle)
 
-        rr.log("/joint_origins/", rr.Points3D(joint_origins))
+        if self.prev_joint_origins is not None:
+            for traj in range(len(joint_angles)):
+                rr.log(f"trajectory/{traj}", rr.LineStrips3D([joint_origins[traj], self.prev_joint_origins[traj]],))
+    
+        self.prev_joint_origins = joint_origins
+
 
     def log_action_dict(self, step):
         pose = step["action_dict"]["cartesian_position"]
