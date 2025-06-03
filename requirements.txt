@@ -1,4 +1,4 @@
-rerun-sdk>=0.16.0
+rerun-sdk==0.16.0
 numpy
 scipy
 h5py
